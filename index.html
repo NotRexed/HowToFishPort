@@ -3,59 +3,26 @@
   <head>
     <meta charset="utf-8">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes">
-    <title>How to Fish</title>
+    <title>Unity Web Player | ExportedProject</title>
     <link rel="shortcut icon" href="TemplateData/favicon.ico">
     <link rel="stylesheet" href="TemplateData/style.css">
     <style>
-      /* Fill the viewport. Overrides the Unity template, which pins the container to a fixed
-         960x600 box centred on the page. */
-      html, body {
-        width: 100%; height: 100%;
-        margin: 0; padding: 0;
-        overflow: hidden;
-        background: #000;
-      }
-      #unity-container, #unity-container.unity-desktop, #unity-container.unity-mobile {
-        position: absolute;
-        left: 0; top: 0;
-        width: 100%; height: 100%;
-        transform: none;
-      }
-      #unity-canvas, #unity-canvas.unity-mobile {
-        width: 100%; height: 100%;
-        display: block;
-        background: #000;
-      }
-      /* The footer would steal vertical space from the canvas. */
+      /* full-page canvas */
+      html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
+      #unity-container { position: absolute; inset: 0; width: 100%; height: 100%; }
+      #unity-canvas { width: 100% !important; height: 100% !important; display: block; background: #000; }
       #unity-footer { display: none; }
-      #unity-loading-bar {
-        position: absolute;
-        left: 50%; top: 50%;
-        transform: translate(-50%, -50%);
-        display: none;
-      }
-      #unity-load-status {
-        position: absolute;
-        left: 50%; top: calc(50% + 60px);
-        transform: translateX(-50%);
-        font: 14px/1.4 system-ui, sans-serif;
-        color: #cfd3d6;
-        text-align: center;
-        white-space: nowrap;
-      }
     </style>
   </head>
   <body>
     <div id="unity-container" class="unity-desktop">
-      <canvas id="unity-canvas" tabindex="-1"></canvas>
+      <canvas id="unity-canvas" width=960 height=600 tabindex="-1"></canvas>
       <div id="unity-loading-bar">
         <div id="unity-logo"></div>
         <div id="unity-progress-bar-empty">
           <div id="unity-progress-bar-full"></div>
         </div>
       </div>
-      <div id="unity-load-status"></div>
       <div id="unity-warning"> </div>
       <div id="unity-footer">
         <div id="unity-logo-title-footer"></div>
@@ -65,20 +32,24 @@
     </div>
     <script>
       var canvas = document.querySelector("#unity-canvas");
-      var statusEl = document.querySelector("#unity-load-status");
-      var barFull = document.querySelector("#unity-progress-bar-full");
 
+      // Shows a temporary message banner/ribbon for a few seconds, or
+      // a permanent error message on top of the canvas if type=='error'.
+      // If type=='warning', a yellow highlight color is used.
+      // Modify or remove this function to customize the visually presented
+      // way that non-critical warnings and error messages are presented to the
+      // user.
       function unityShowBanner(msg, type) {
         var warningBanner = document.querySelector("#unity-warning");
         function updateBannerVisibility() {
-          warningBanner.style.display = warningBanner.children.length ? "block" : "none";
+          warningBanner.style.display = warningBanner.children.length ? 'block' : 'none';
         }
-        var div = document.createElement("div");
+        var div = document.createElement('div');
         div.innerHTML = msg;
         warningBanner.appendChild(div);
-        if (type == "error") div.style = "background: red; padding: 10px;";
+        if (type == 'error') div.style = 'background: red; padding: 10px;';
         else {
-          if (type == "warning") div.style = "background: yellow; padding: 10px;";
+          if (type == 'warning') div.style = 'background: yellow; padding: 10px;';
           setTimeout(function() {
             warningBanner.removeChild(div);
             updateBannerVisibility();
@@ -89,97 +60,6 @@
 
       var buildUrl = "Build";
       var loaderUrl = buildUrl + "/WebGL.loader.js";
-
-      // ---------------------------------------------------------------------------------------
-      // Split payload reassembly.
-      //
-      // WebGL.data and WebGL.wasm are too big to host in one piece, so they ship as numbered parts.
-      // The Unity loader only understands a single URL per payload, so the parts are fetched here,
-      // stitched into a Blob, and handed to the loader as a blob: URL.
-      //
-      // Part naming is auto-detected, so re-splitting into a different number of pieces needs no
-      // edit here. Both schemes currently in the Build folder are supported:
-      //     WebGL.data.part1 .. .part7      (1-based)
-      //     WebGL.wasm.000   .. .003        (0-based, zero padded)
-      // If the unsplit file is present it is used directly and nothing is downloaded twice.
-      // ---------------------------------------------------------------------------------------
-      function setStatus(text) { statusEl.textContent = text || ""; }
-      function setProgress(f) { barFull.style.width = (100 * Math.max(0, Math.min(1, f))) + "%"; }
-
-      async function headSize(url) {
-        try {
-          const r = await fetch(url, { method: "HEAD" });
-          if (!r.ok) return -1;
-          const len = r.headers.get("Content-Length");
-          return len === null ? 0 : parseInt(len, 10);
-        } catch (e) { return -1; }
-      }
-
-      // Probe the known naming schemes and return the ordered part URLs plus their total size.
-      async function discoverParts(base) {
-        const schemes = [
-          (i) => base + ".part" + (i + 1),
-          (i) => base + "." + String(i).padStart(3, "0"),
-          (i) => base + ".part" + String(i + 1).padStart(3, "0"),
-        ];
-        for (const naming of schemes) {
-          const first = await headSize(naming(0));
-          if (first < 0) continue;
-          const urls = [naming(0)];
-          let total = first;
-          // Cap the probe so a misnamed set cannot spin forever.
-          for (let i = 1; i < 512; i++) {
-            const size = await headSize(naming(i));
-            if (size < 0) break;
-            urls.push(naming(i));
-            total += size;
-          }
-          return { urls: urls, total: total };
-        }
-        return { urls: [], total: 0 };
-      }
-
-      async function resolvePayload(base, mime, label) {
-        const whole = await headSize(base);
-        if (whole >= 0) return base;                     // not split - use it as-is
-
-        const found = await discoverParts(base);
-        const urls = found.urls;
-        const total = found.total;
-        if (!urls.length) throw new Error("Could not find " + base + " or any numbered parts of it.");
-
-        // One Blob per part, then a Blob of Blobs. The browser can spill Blobs to disk, so peak
-        // memory stays near a single part rather than the whole payload.
-        const partBlobs = [];
-        let loaded = 0;
-        for (const url of urls) {
-          const res = await fetch(url);
-          if (!res.ok) throw new Error("Failed to fetch " + url + " (" + res.status + ")");
-          const chunks = [];
-          if (res.body && res.body.getReader) {
-            const reader = res.body.getReader();
-            for (;;) {
-              const step = await reader.read();
-              if (step.done) break;
-              chunks.push(step.value);
-              loaded += step.value.length;
-              if (total > 0) setProgress(loaded / total);
-              setStatus(label + " " + (loaded / 1048576).toFixed(0) + " / " + (total / 1048576).toFixed(0) + " MB");
-            }
-          } else {
-            const buf = await res.arrayBuffer();
-            chunks.push(new Uint8Array(buf));
-            loaded += buf.byteLength;
-            if (total > 0) setProgress(loaded / total);
-          }
-          partBlobs.push(new Blob(chunks));
-          chunks.length = 0;
-        }
-        const blob = new Blob(partBlobs, { type: mime });
-        partBlobs.length = 0;
-        return URL.createObjectURL(blob);
-      }
-
       var config = {
         arguments: [],
         dataUrl: buildUrl + "/WebGL.data",
@@ -190,51 +70,114 @@
         productName: "ExportedProject",
         productVersion: "1.0",
         showBanner: unityShowBanner,
+        // errorHandler: function(err, url, line) {
+        //    alert("error " + err + " occurred at line " + line);
+        //    // Return 'true' if you handled this error and don't want Unity
+        //    // to process it further, 'false' otherwise.
+        //    return true;
+        // },
       };
 
       config.cacheControl = function (url) { return "no-store"; };
+      config.autoSyncPersistentDataPath = true;
 
-      (async function boot() {
-        document.querySelector("#unity-loading-bar").style.display = "block";
-        const objectUrls = [];
+      // By default, Unity keeps WebGL canvas render target size matched with
+      // the DOM size of the canvas element (scaled by window.devicePixelRatio)
+      // Set this to false if you want to decouple this synchronization from
+      // happening inside the engine, and you would instead like to size up
+      // the canvas DOM size and WebGL render target sizes yourself.
+      // config.matchWebGLToCanvasSize = false;
+
+      // If you would like all file writes inside Unity Application.persistentDataPath
+      // directory to automatically persist so that the contents are remembered when
+      // the user revisits the site the next time, uncomment the following line:
+      // config.autoSyncPersistentDataPath = true;
+      // This autosyncing is currently not the default behavior to avoid regressing
+      // existing user projects that might rely on the earlier manual
+      // JS_FileSystem_Sync() behavior, but in future Unity version, this will be
+      // expected to change.
+
+      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+        // Mobile device style: fill the whole browser client area with the game canvas:
+
+        var meta = document.createElement('meta');
+        meta.name = 'viewport';
+        meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
+        document.getElementsByTagName('head')[0].appendChild(meta);
+        document.querySelector("#unity-container").className = "unity-mobile";
+        canvas.className = "unity-mobile";
+
+        // To lower canvas resolution on mobile devices to gain some
+        // performance, uncomment the following line:
+        // config.devicePixelRatio = 1;
+
+
+      } else {
+        // Desktop style: Render the game canvas in a window that can be maximized to fullscreen:
+        /* size comes from the full-page CSS */
+        
+      }
+
+      document.querySelector("#unity-loading-bar").style.display = "block";
+
+      // Point the game at the relay unless the URL already says otherwise.
+      (function () {
+        var relay = 'wss://howtofishrelaytest-production.up.railway.app';
+        if (!relay) return;
         try {
-          setStatus("Preparing game data...");
-          // Sequential, not parallel: two multi-hundred-megabyte downloads at once just fight for
-          // bandwidth and memory.
-          config.codeUrl = await resolvePayload(buildUrl + "/WebGL.wasm", "application/wasm", "Downloading engine");
-          config.dataUrl = await resolvePayload(buildUrl + "/WebGL.data", "application/octet-stream", "Downloading game data");
-          [config.codeUrl, config.dataUrl].forEach(function (u) {
-            if (u.indexOf("blob:") === 0) objectUrls.push(u);
-          });
-        } catch (e) {
-          setStatus("");
-          unityShowBanner(String(e && e.message ? e.message : e), "error");
-          return;
-        }
-
-        setStatus("Starting...");
-        setProgress(0);
-
-        const script = document.createElement("script");
-        script.src = loaderUrl;
-        script.onload = function () {
-          createUnityInstance(canvas, config, function (progress) {
-            setProgress(progress);
-          }).then(function (unityInstance) {
-            window.unityInstance = unityInstance;
-            document.querySelector("#unity-loading-bar").style.display = "none";
-            setStatus("");
-            // The engine has consumed them; let the browser reclaim the memory.
-            objectUrls.forEach(function (u) { URL.revokeObjectURL(u); });
-            const fs = document.querySelector("#unity-fullscreen-button");
-            if (fs) fs.onclick = function () { unityInstance.SetFullscreen(1); };
-          }).catch(function (message) {
-            setStatus("");
-            unityShowBanner(String(message), "error");
-          });
-        };
-        document.body.appendChild(script);
+          var u = new URL(window.location.href);
+          if (!u.searchParams.get('relay')) {
+            u.searchParams.set('relay', relay);
+            history.replaceState(null, '', u.toString());
+          }
+        } catch (e) {}
       })();
+
+      // Prefer the whole file; fall back to stitching the uploaded parts together.
+      async function headOk(url) {
+        try { var r = await fetch(url, { method: 'HEAD' }); return r.ok; } catch (e) { return false; }
+      }
+      async function resolveSplitFile(url) {
+        if (await headOk(url)) return url;
+        var namings = [
+          function (i) { return url + '.part' + (i + 1); },
+          function (i) { return url + '.' + String(i).padStart(3, '0'); },
+          function (i) { return url + '.part' + String(i + 1).padStart(3, '0'); }
+        ];
+        for (var n = 0; n < namings.length; n++) {
+          if (!(await headOk(namings[n](0)))) continue;
+          var blobs = [];
+          for (var i = 0; i < 128; i++) {
+            var part = namings[n](i);
+            if (!(await headOk(part))) break;
+            blobs.push(await (await fetch(part)).blob());
+          }
+          return URL.createObjectURL(new Blob(blobs, { type: 'application/octet-stream' }));
+        }
+        throw new Error('Could not find ' + url + ' or any of its parts.');
+      }
+
+      var script = document.createElement("script");
+      script.src = loaderUrl;
+      script.onload = async () => {
+        config.dataUrl = await resolveSplitFile(config.dataUrl);
+        config.codeUrl = await resolveSplitFile(config.codeUrl);
+        createUnityInstance(canvas, config, (progress) => {
+          document.querySelector("#unity-progress-bar-full").style.width = 100 * progress + "%";
+              }).then((unityInstance) => {
+                window.unityInstance = unityInstance;
+                document.querySelector("#unity-loading-bar").style.display = "none";
+                document.querySelector("#unity-fullscreen-button").onclick = () => {
+                  unityInstance.SetFullscreen(1);
+                };
+
+              }).catch((message) => {
+                alert(message);
+              });
+            };
+
+      document.body.appendChild(script);
+
     </script>
   </body>
 </html>
