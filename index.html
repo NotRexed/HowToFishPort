@@ -58,6 +58,11 @@
         updateBannerVisibility();
       }
 
+      // Unity surfaces non-fatal problems as alert() ("This page says...") and as an on-page
+      // banner. Neither is actionable for a player, so send both to the console instead.
+      window.alert = function (m) { console.warn("[unity]", m); };
+      unityShowBanner = function (msg, type) { console.warn("[unity " + (type || "info") + "]", msg); };
+
       var buildUrl = "Build";
       var loaderUrl = buildUrl + "/WebGL.loader.js";
       var config = {
