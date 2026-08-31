@@ -120,38 +120,35 @@
 
       document.querySelector("#unity-loading-bar").style.display = "block";
 
-      // Point the game at the relay unless the URL already says otherwise.
-      (function () {
-        var relay = 'wss://howtofishrelaytest-production.up.railway.app';
-        if (!relay) return;
-        try {
-          var u = new URL(window.location.href);
-          if (!u.searchParams.get('relay')) {
-            u.searchParams.set('relay', relay);
-            history.replaceState(null, '', u.toString());
-          }
-        } catch (e) {}
-      })();
-
       // Prefer the whole file; fall back to stitching the uploaded parts together.
-      async function headOk(url) {
-        try { var r = await fetch(url, { method: 'HEAD' }); return r.ok; } catch (e) { return false; }
+      // Not every static host answers HEAD, so fall back to a one-byte ranged GET.
+      async function exists(url) {
+        try {
+          var head = await fetch(url, { method: 'HEAD' });
+          if (head.ok) return true;
+          if (head.status === 404) return false;
+        } catch (e) {}
+        try {
+          var res = await fetch(url, { headers: { Range: 'bytes=0-0' } });
+          return res.ok || res.status === 206;
+        } catch (e) { return false; }
       }
       async function resolveSplitFile(url) {
-        if (await headOk(url)) return url;
+        if (await exists(url)) return url;
         var namings = [
           function (i) { return url + '.part' + (i + 1); },
           function (i) { return url + '.' + String(i).padStart(3, '0'); },
           function (i) { return url + '.part' + String(i + 1).padStart(3, '0'); }
         ];
         for (var n = 0; n < namings.length; n++) {
-          if (!(await headOk(namings[n](0)))) continue;
+          if (!(await exists(namings[n](0)))) continue;
           var blobs = [];
           for (var i = 0; i < 128; i++) {
             var part = namings[n](i);
-            if (!(await headOk(part))) break;
+            if (!(await exists(part))) break;
             blobs.push(await (await fetch(part)).blob());
           }
+          // A Blob of Blobs can be backed by disk, so peak memory stays near one part.
           return URL.createObjectURL(new Blob(blobs, { type: 'application/octet-stream' }));
         }
         throw new Error('Could not find ' + url + ' or any of its parts.');
